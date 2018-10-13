@@ -5,7 +5,7 @@ from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 
 from forms import UserAddForm, LoginForm, MessageForm, UserEditForm
-from models import db, connect_db, User, Message, Reaction
+from models import db, connect_db, User, Message, Reaction, Thread, DM
 
 CURR_USER_KEY = "curr_user"
 
@@ -407,11 +407,89 @@ def page_not_found(e):
 
 
 ##############################################################################
+# Thread and DM pages
+
+
+@app.route('/threads')
+def list_threads():
+    """Page with listing of threads.
+    """
+    # query the threads where I'm user 1
+    my_user1_threads = Thread.query.filter(Thread.user1_id == g.user.id).all()
+    # query the threads where I'm user 2
+    my_user2_threads = Thread.query.filter(Thread.user2_id == g.user.id).all()
+    return render_template('threads.html', my_user1_threads=my_user1_threads, my_user2_threads=my_user2_threads)
+
+    # get all the users talk to me
+    # get all the users i'm talking to
+
+    # for in the combined list
+
+    # look up their thread
+    # put it in [[user, thread], [user, thread]]
+
+
+@app.route('/threads/add/<int:user_id>', methods=['POST'])
+def add_thread(user_id):
+    """Page to add a thread. """
+    # if this user id combo exists
+    thread = Thread.query.filter(
+        Thread.user1_id == user_id, Thread.user2_id == g.user.id).all()
+
+    thread2 = Thread.query.filter(
+        Thread.user2_id == user_id, Thread.user1_id == g.user.id).all()
+
+    if thread:
+        return redirect(f'threads/{thread[0].id}')
+
+    if thread2:
+        return redirect(f'threads/{thread2[0].id}')
+
+    # else:
+    if (user_id < g.user.id):
+        new_thread = Thread(user1_id=user_id, user2_id=g.user.id)
+    else:
+        new_thread = Thread(user1_id=g.user.id, user2_id=user_id)
+    db.session.add(new_thread)
+    db.session.commit()
+    return redirect(f'threads/{new_thread.id}')
+
+
+@app.route('/threads/<int:thread_id>')
+def show_thread(thread_id):
+    """Page to see a thread. """
+    thread = Thread.query.get(thread_id)
+    if g.user.id == thread.user1_id or g.user.id == thread.user2_id:
+        if (g.user.id == thread.user1_id):
+            other_username = thread.user2.username
+        else:
+            other_username = thread.user1.username
+
+        return render_template("show-thread.html", thread=thread, other_username=other_username)
+    else:
+        flash('Unauthorized', 'danger')
+        return redirect('/')
+
+
+@app.route('/threads/<int:thread_id>/dm/add', methods=["POST"])
+def add_dm(thread_id):
+    """adds a dm"""
+    thread = Thread.query.get(thread_id)
+    text = request.json["text"]
+    dm = DM(text=text, thread_id=thread_id, author=g.user.id)
+    db.session.add(dm)
+    db.session.commit()
+    all_dms = [[dm.text, dm.author] for dm in thread.dms]
+    return jsonify(all_dms)
+
+
+##############################################################################
 # Turn off all caching in Flask
 #   (useful for dev; in production, this kind of stuff is typically
 #   handled elsewhere)
 #
 # https://stackoverflow.com/questions/34066804/disabling-caching-in-flask
+
 
 @app.after_request
 def add_header(req):
